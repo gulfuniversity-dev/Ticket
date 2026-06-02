@@ -5,7 +5,10 @@ import { buildTicketsPdf, type PdfTicket } from "@/lib/pdf";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+// Vercel caps function duration (60s on Hobby/Pro by default). The bulk
+// "all tickets" PDF (hundreds of QR pages) may approach this — if it ever
+// times out on the hosted plan, generate it locally with `npm run start`.
+export const maxDuration = 60;
 
 // GET /api/admin/tickets/pdf?studentId=XXX     (one student's tickets)
 // GET /api/admin/tickets/pdf?all=1             (every student's tickets)
