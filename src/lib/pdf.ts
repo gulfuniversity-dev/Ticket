@@ -1,6 +1,13 @@
 import "server-only";
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage } from "pdf-lib";
+import {
+  PDFDocument,
+  StandardFonts,
+  rgb,
+  type PDFFont,
+  type PDFEmbeddedPage,
+} from "pdf-lib";
 import QRCode from "qrcode";
+import { INVITATION_PDF_BASE64 } from "./invitation-asset";
 
 export interface PdfTicket {
   ticket_id: string;
@@ -12,149 +19,129 @@ export interface PdfTicket {
   status?: string;
 }
 
-const navy = rgb(0.043, 0.141, 0.278); // #0b2447
-const blue = rgb(0.098, 0.216, 0.427); // #19376d
-const gold = rgb(0.788, 0.635, 0.153); // #c9a227
-const slate = rgb(0.28, 0.33, 0.4);
-const lightGray = rgb(0.93, 0.95, 0.97);
+// Palette sampled from the invitation artwork.
+const navy = rgb(0.043, 0.106, 0.255); // deep navy of the invite interior
+const gold = rgb(0.804, 0.663, 0.42); // bronze-gold of the frame
+const cream = rgb(0.95, 0.93, 0.88);
+const muted = rgb(0.62, 0.69, 0.82);
 
-const CEREMONY =
-  process.env.NEXT_PUBLIC_CEREMONY_TITLE ||
-  "Gulf University Graduation Ceremony — Spring 2025/2026";
+const STRIP_H = 132; // personalization strip height (pts) below the invitation
 
-function safe(text: string, font: PDFFont): string {
-  // pdf-lib StandardFonts (WinAnsi) cannot encode some characters; strip them.
-  let out = "";
+// Returns true if every char of `text` is encodable by the standard (WinAnsi)
+// font. Arabic names are not, so we fall back to ID-only identification.
+function isEncodable(text: string, font: PDFFont): boolean {
+  if (!text) return false;
   for (const ch of text) {
     try {
       font.widthOfTextAtSize(ch, 10);
-      out += ch;
     } catch {
-      out += "?";
+      return false;
     }
   }
-  return out;
+  return true;
 }
 
 async function drawTicket(
   doc: PDFDocument,
   t: PdfTicket,
-  fonts: { reg: PDFFont; bold: PDFFont }
+  ctx: { reg: PDFFont; bold: PDFFont; invite: PDFEmbeddedPage }
 ) {
-  const W = 600;
-  const H = 300;
+  const { reg, bold, invite } = ctx;
+  const W = invite.width; // invitation is square (425.197 pt)
+  const artH = invite.height;
+  const H = artH + STRIP_H;
   const page = doc.addPage([W, H]);
 
-  // Card background + border
-  page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: rgb(1, 1, 1) });
-  page.drawRectangle({
-    x: 8,
-    y: 8,
-    width: W - 16,
-    height: H - 16,
-    borderColor: blue,
-    borderWidth: 1.5,
-    color: rgb(1, 1, 1),
+  // Navy backdrop (covers the strip and any sub-pixel gaps behind the frame).
+  page.drawRectangle({ x: 0, y: 0, width: W, height: H, color: navy });
+
+  // The invitation artwork sits on top.
+  page.drawPage(invite, { x: 0, y: STRIP_H, width: W, height: artH });
+
+  // Dashed gold "perforation" line dividing the invite from the ticket stub.
+  page.drawLine({
+    start: { x: 16, y: STRIP_H },
+    end: { x: W - 16, y: STRIP_H },
+    thickness: 1,
+    color: gold,
+    dashArray: [5, 4],
   });
 
-  // Top band
-  page.drawRectangle({ x: 8, y: H - 70, width: W - 16, height: 62, color: navy });
-  // GU badge
-  page.drawCircle({ x: 48, y: H - 39, size: 22, color: gold });
-  page.drawText("GU", {
-    x: 36,
-    y: H - 45,
-    size: 16,
-    font: fonts.bold,
-    color: navy,
-  });
-  page.drawText("GULF UNIVERSITY", {
-    x: 82,
-    y: H - 32,
-    size: 16,
-    font: fonts.bold,
-    color: rgb(1, 1, 1),
-  });
-  page.drawText(safe(CEREMONY, fonts.reg), {
-    x: 82,
-    y: H - 50,
-    size: 9,
-    font: fonts.reg,
-    color: rgb(0.78, 0.86, 0.95),
-  });
-
-  // QR code (right side)
+  // ---- QR code (right side of the strip) ----
   const qrPng = await QRCode.toBuffer(t.qr_token, {
     errorCorrectionLevel: "M",
     margin: 1,
-    width: 320,
+    width: 360,
   });
   const qrImg = await doc.embedPng(qrPng);
-  const qrSize = 150;
-  const qrX = W - qrSize - 36;
-  const qrY = 60;
+  const qrSize = 92;
+  const qrX = W - qrSize - 24;
+  const qrY = (STRIP_H - qrSize) / 2;
   page.drawRectangle({
-    x: qrX - 8,
-    y: qrY - 8,
-    width: qrSize + 16,
-    height: qrSize + 16,
-    color: lightGray,
-    borderColor: blue,
+    x: qrX - 7,
+    y: qrY - 7,
+    width: qrSize + 14,
+    height: qrSize + 14,
+    color: rgb(1, 1, 1),
+    borderColor: gold,
     borderWidth: 1,
   });
   page.drawImage(qrImg, { x: qrX, y: qrY, width: qrSize, height: qrSize });
 
-  // Left details
-  let y = H - 100;
-  const leftX = 36;
-  page.drawText("ADMIT ONE — GRADUATE GUEST", {
+  // ---- Left details ----
+  const leftX = 28;
+  page.drawText("GRADUATE GUEST PASS", {
     x: leftX,
-    y,
+    y: STRIP_H - 26,
     size: 9,
-    font: fonts.bold,
+    font: bold,
     color: gold,
   });
-  y -= 26;
-  page.drawText(safe(t.student_name || "", fonts.bold), {
-    x: leftX,
-    y,
-    size: 17,
-    font: fonts.bold,
-    color: navy,
-  });
-  y -= 22;
-  page.drawText(`Student ID: ${t.student_id}`, {
-    x: leftX,
-    y,
-    size: 11,
-    font: fonts.reg,
-    color: slate,
-  });
-  y -= 30;
+
+  // Optional name line (only when the font can render it — i.e. Latin names).
+  let cursor = STRIP_H - 50;
+  if (isEncodable(t.student_name, bold)) {
+    page.drawText(t.student_name, {
+      x: leftX,
+      y: cursor,
+      size: 12,
+      font: bold,
+      color: cream,
+    });
+    cursor -= 22;
+  }
+
   page.drawText(`Ticket ${t.ticket_number} of ${t.total_tickets}`, {
     x: leftX,
-    y,
-    size: 14,
-    font: fonts.bold,
-    color: blue,
+    y: cursor,
+    size: 15,
+    font: bold,
+    color: rgb(1, 1, 1),
   });
-  y -= 20;
-  page.drawText(`Ticket ID: ${t.ticket_id}`, {
+  cursor -= 19;
+  page.drawText(`Ticket No: ${t.ticket_id}`, {
     x: leftX,
-    y,
-    size: 10,
-    font: fonts.reg,
-    color: slate,
+    y: cursor,
+    size: 9.5,
+    font: reg,
+    color: muted,
+  });
+  cursor -= 15;
+  page.drawText(`Student No: ${t.student_id}`, {
+    x: leftX,
+    y: cursor,
+    size: 9.5,
+    font: reg,
+    color: muted,
   });
 
-  // Bottom instruction band
-  page.drawRectangle({ x: 8, y: 8, width: W - 16, height: 30, color: lightGray });
-  page.drawText("This QR code is valid for ONE entry only. Please present it at the gate.", {
+  // Footer micro-instruction.
+  page.drawText("Valid for ONE entry  ·  Please present this QR code at the gate.", {
     x: leftX,
-    y: 18,
-    size: 10,
-    font: fonts.bold,
-    color: navy,
+    y: 12,
+    size: 8,
+    font: reg,
+    color: muted,
   });
 }
 
@@ -164,9 +151,14 @@ export async function buildTicketsPdf(
   const doc = await PDFDocument.create();
   const reg = await doc.embedFont(StandardFonts.Helvetica);
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
+
+  // Embed the invitation artwork once; reused as a shared XObject on every page.
+  const inviteBytes = Buffer.from(INVITATION_PDF_BASE64, "base64");
+  const [invite] = await doc.embedPdf(inviteBytes, [0]);
+
   doc.setTitle("Gulf University Graduation E-Tickets");
   for (const t of tickets) {
-    await drawTicket(doc, t, { reg, bold });
+    await drawTicket(doc, t, { reg, bold, invite });
   }
   return doc.save();
 }
