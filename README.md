@@ -235,12 +235,29 @@ SSL is enabled in code.
 
 ---
 
-## ✉️ Optional: Email tickets to students
+## ✉️ Email tickets to students
 
-Email delivery is intentionally left as a pluggable extension. To add it:
-generate each student's PDF with `buildTicketsPdf()` (`src/lib/pdf.ts`) and send it
-with your provider (e.g. SendGrid/Resend/SMTP via `nodemailer`) using the `students.email`
-column. A good place is a new `POST /api/admin/students/[studentId]/email` route.
+Tickets are emailed as a PDF attachment to **`<StudentID>@gulfuniversity.edu.bh`**
+via **Office 365 SMTP** (`nodemailer`). Every send is recorded in the `email_log`
+table and stamps `students.last_emailed_at`.
+
+**Setup** — fill these in `.env.local` (see `.env.example`):
+`SMTP_USER`, `SMTP_PASS` (an Office 365 mailbox + app password), `MAIL_FROM`,
+and `EMAIL_BULK_SECRET`. The mailbox must have **SMTP AUTH enabled** in the
+Microsoft 365 admin center, and `STUDENT_EMAIL_DOMAIN` controls the recipient domain.
+
+**Send to one student:** the **Email tickets** button on a student's admin page
+(`POST /api/admin/students/[studentId]/email`).
+
+**Send to everyone (bulk):** start the app (`npm run start`), then run the
+throttled script — it drives the same endpoint so it never hits the serverless
+time limit:
+```bash
+npm run send-tickets -- --limit 1   # smoke test: first student only
+npm run send-tickets                # everyone not yet emailed
+npm run send-tickets -- --force     # resend to everyone
+npm run send-tickets -- --dry-run   # list recipients, send nothing
+```
 
 ---
 

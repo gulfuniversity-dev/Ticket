@@ -18,6 +18,7 @@ interface Student {
   email: string | null;
   phone: string | null;
   tickets_purchased: number;
+  last_emailed_at: string | null;
 }
 
 const badgeClass: Record<string, string> = {
@@ -52,6 +53,34 @@ export default function StudentDetailPage({
     load();
   }, [load]);
 
+  async function addTickets() {
+    setBusy("add");
+    setMsg("");
+    const res = await fetch(`/api/admin/students/${studentId}/tickets`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ count: 1 }),
+    });
+    const data = await res.json();
+    if (!res.ok) setMsg(data.error || "Could not add ticket");
+    else setMsg(`✓ Added ${data.added.join(", ")} — now ${data.total} ticket(s)`);
+    await load();
+    setBusy("");
+  }
+
+  async function emailTickets() {
+    setBusy("email");
+    setMsg("");
+    const res = await fetch(`/api/admin/students/${studentId}/email`, {
+      method: "POST",
+    });
+    const data = await res.json();
+    if (!res.ok) setMsg(data.error || "Email failed");
+    else setMsg(`✓ Sent ${data.tickets} ticket(s) to ${data.recipient}`);
+    await load();
+    setBusy("");
+  }
+
   async function act(ticketId: string, action: string) {
     setBusy(ticketId + action);
     setMsg("");
@@ -79,17 +108,44 @@ export default function StudentDetailPage({
           <h1 className="text-xl font-bold text-gu-navy">{student.student_name}</h1>
           <p className="font-mono text-sm text-slate-500">{student.student_id}</p>
           <p className="text-sm text-slate-500">
-            {student.email || "no email"} · {student.phone || "no phone"} ·{" "}
-            {student.tickets_purchased} ticket(s)
+            {student.tickets_purchased} ticket(s) · emails to{" "}
+            <span className="font-mono">{student.student_id}@gulfuniversity.edu.bh</span>
+          </p>
+          <p className="text-xs text-slate-400">
+            {student.last_emailed_at
+              ? `Last emailed: ${fmt(student.last_emailed_at)}`
+              : "Not emailed yet"}
           </p>
         </div>
-        <a className="btn-gold" href={`/api/admin/tickets/pdf?studentId=${student.student_id}`}>
-          Download tickets (PDF)
-        </a>
+        <div className="flex flex-wrap gap-2">
+          <button
+            className="btn-ghost"
+            disabled={busy === "add"}
+            onClick={addTickets}
+          >
+            {busy === "add" ? "Adding…" : "+ Add ticket"}
+          </button>
+          <button
+            className="btn-primary"
+            disabled={busy === "email"}
+            onClick={emailTickets}
+          >
+            {busy === "email" ? "Sending…" : "Email tickets"}
+          </button>
+          <a className="btn-gold" href={`/api/admin/tickets/pdf?studentId=${student.student_id}`}>
+            Download tickets (PDF)
+          </a>
+        </div>
       </div>
 
       {msg && (
-        <div className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700 ring-1 ring-red-200">
+        <div
+          className={`rounded-lg px-3 py-2 text-sm ring-1 ${
+            msg.startsWith("✓")
+              ? "bg-green-50 text-green-700 ring-green-200"
+              : "bg-red-50 text-red-700 ring-red-200"
+          }`}
+        >
           {msg}
         </div>
       )}

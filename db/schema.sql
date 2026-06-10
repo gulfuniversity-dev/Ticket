@@ -29,11 +29,15 @@ create table if not exists students (
   email             text,
   phone             text,
   tickets_purchased int  not null default 0,
+  last_emailed_at   timestamptz,
   created_at        timestamptz not null default now(),
   updated_at        timestamptz not null default now()
 );
 
 create index if not exists idx_students_name on students (lower(student_name));
+
+-- Backfill for databases created before the email feature.
+alter table students add column if not exists last_emailed_at timestamptz;
 
 -- ----------------------------------------------------------------
 -- tickets : one row per generated e-ticket
@@ -75,3 +79,19 @@ create table if not exists check_in_logs (
 create index if not exists idx_logs_scanned_at on check_in_logs (scanned_at desc);
 create index if not exists idx_logs_action     on check_in_logs (action);
 create index if not exists idx_logs_ticket      on check_in_logs (ticket_id);
+
+-- ----------------------------------------------------------------
+-- email_log : audit trail of ticket-delivery emails
+-- ----------------------------------------------------------------
+create table if not exists email_log (
+  id           uuid primary key default gen_random_uuid(),
+  student_id   text,
+  recipient    text not null,
+  ticket_count int,
+  status       text not null check (status in ('sent', 'failed')),
+  error        text,
+  created_at   timestamptz not null default now()
+);
+
+create index if not exists idx_email_log_student on email_log (student_id);
+create index if not exists idx_email_log_created on email_log (created_at desc);

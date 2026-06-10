@@ -1,0 +1,10 @@
+import { getPool } from "./db.mjs";
+const pool = getPool();
+const sid = process.argv[2] || "220107100073";
+const stu = await pool.query("select student_id, student_name, tickets_purchased from students where student_id=$1", [sid]);
+console.log("Student:", JSON.stringify(stu.rows, null, 2));
+const tix = await pool.query("select ticket_id, ticket_number, total_tickets, status from tickets where student_id=$1 order by ticket_number", [sid]);
+console.log("Tickets:", JSON.stringify(tix.rows, null, 2));
+const maxseq = await pool.query("select coalesce(max(nullif(regexp_replace(ticket_id, '\\D', '', 'g'), '')::bigint), 0) as maxseq from tickets where ticket_id like 'GU2026-%'");
+console.log("Current max GU2026 seq:", maxseq.rows[0].maxseq);
+await pool.end();
